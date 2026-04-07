@@ -12,4 +12,3 @@ Jinja2
 python-dotenv
 openai>=1.30.0,<2
 gunicorn>=22,<24
-psycopg[binary]>=3.2,<4

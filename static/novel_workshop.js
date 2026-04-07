@@ -918,7 +918,7 @@ async function saveArchive({ silent = false } = {}) {
     });
 
     if (!silent) {
-        setStatus(`云端存档已保存：${archiveId}`, "done");
+        setStatus(`本地存档已保存：${archiveId}`, "done");
     }
     return archiveId;
 }
@@ -934,7 +934,7 @@ async function loadArchive() {
         payload: { archive_id: archiveId },
     });
     applyArchiveSnapshot(result.payload);
-    setStatus(`已读取云端存档：${archiveId}`, "done");
+    setStatus(`已读取本地存档：${archiveId}`, "done");
 }
 
 function scheduleArchiveAutosave() {
@@ -950,7 +950,7 @@ function scheduleArchiveAutosave() {
     archiveAutosaveTimer = setTimeout(() => {
         saveArchive({ silent: true }).catch((error) => {
             console.error(error);
-            setStatus(error.message || "云端自动保存失败。", "error");
+            setStatus(error.message || "本地存档自动保存失败。", "error");
         });
     }, 1500);
 }
@@ -1471,24 +1471,24 @@ function bindButtons() {
         setFieldValue("archive-id", archiveId);
         saveState();
         saveArchive({ silent: true }).then(() => {
-            setStatus(`已新建云端存档：${archiveId}`, "done");
+            setStatus(`已新建本地存档：${archiveId}`, "done");
         }).catch((error) => {
             console.error(error);
-            setStatus(error.message || "新建云端存档失败。", "error");
+            setStatus(error.message || "新建本地存档失败。", "error");
         });
     });
 
     byId("save-archive").addEventListener("click", () => {
         runButtonTask("save-archive", async () => {
-            setStatus("正在保存云端存档。", "working");
+            setStatus("正在保存本地存档。", "working");
             await saveArchive({ silent: true });
-            setStatus(`云端存档已保存：${getFieldValue("archive-id")}`, "done");
+            setStatus(`本地存档已保存：${getFieldValue("archive-id")}`, "done");
         });
     });
 
     byId("load-archive").addEventListener("click", () => {
         runButtonTask("load-archive", async () => {
-            setStatus("正在读取云端存档。", "working");
+            setStatus("正在读取本地存档。", "working");
             await loadArchive();
         });
     });

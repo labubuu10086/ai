@@ -13,11 +13,6 @@ from flask import Flask, Response, jsonify, render_template, request
 from openai import OpenAI
 import requests
 
-try:
-    import psycopg
-except ImportError:
-    psycopg = None
-
 load_dotenv()
 
 app = Flask(__name__)
@@ -124,36 +119,7 @@ def get_float_setting(name: str, fallback: float) -> float:
         return fallback
 
 
-def get_archive_database_url() -> str | None:
-    return get_setting("ARCHIVE_DATABASE_URL") or get_setting("DATABASE_URL")
-
-
-def is_postgres_url(database_url: str | None) -> bool:
-    if not database_url:
-        return False
-    return database_url.startswith("postgres://") or database_url.startswith("postgresql://")
-
-
 def ensure_archive_table() -> None:
-    database_url = get_archive_database_url()
-    if is_postgres_url(database_url):
-        if psycopg is None:
-            raise RuntimeError("已配置数据库存档，但当前环境未安装 psycopg。请重新安装依赖。")
-        with psycopg.connect(database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS archives (
-                        archive_id TEXT PRIMARY KEY,
-                        payload TEXT NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    )
-                    """
-                )
-            conn.commit()
-        return
-
     ARCHIVE_LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(ARCHIVE_LOCAL_DB_PATH) as conn:
         conn.execute(
@@ -179,22 +145,6 @@ def validate_archive_id(raw_archive_id: str) -> str:
 def save_archive_snapshot(archive_id: str, payload: dict) -> None:
     ensure_archive_table()
     body = json.dumps(payload, ensure_ascii=False)
-    database_url = get_archive_database_url()
-
-    if is_postgres_url(database_url):
-        with psycopg.connect(database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO archives (archive_id, payload)
-                    VALUES (%s, %s)
-                    ON CONFLICT (archive_id)
-                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
-                    """,
-                    (archive_id, body),
-                )
-            conn.commit()
-        return
 
     ARCHIVE_LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(ARCHIVE_LOCAL_DB_PATH) as conn:
@@ -212,18 +162,6 @@ def save_archive_snapshot(archive_id: str, payload: dict) -> None:
 
 def load_archive_snapshot(archive_id: str) -> dict | None:
     ensure_archive_table()
-    database_url = get_archive_database_url()
-
-    if is_postgres_url(database_url):
-        with psycopg.connect(database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT payload, updated_at FROM archives WHERE archive_id = %s", (archive_id,))
-                row = cur.fetchone()
-        if not row:
-            return None
-        payload = json.loads(row[0])
-        payload["_updated_at"] = str(row[1])
-        return payload
 
     if not ARCHIVE_LOCAL_DB_PATH.exists():
         return None
@@ -1598,7 +1536,7 @@ def healthz():
     return jsonify(
         {
             "ok": True,
-            "archive_backend": "postgres" if is_postgres_url(get_archive_database_url()) else "local",
+            "archive_backend": "local",
         }
     )
 
