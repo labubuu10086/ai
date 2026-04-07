@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+run.out.log
+run.err.log
+run.test.out.log
+run.test.err.log
+.DS_Store
+Thumbs.db

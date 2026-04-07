@@ -1,0 +1,14 @@
+Flask
+requests
+Werkzeug
+MarkupSafe
+itsdangerous
+click
+certifi
+charset-normalizer
+idna
+urllib3
+Jinja2
+python-dotenv
+openai>=1.30.0,<2
+gunicorn>=22,<24

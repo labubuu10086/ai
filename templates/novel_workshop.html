@@ -1,0 +1,536 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#efe2c3">
+    <title>长篇连载工坊</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='novel_workshop.css') }}">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">Serial Story Studio</p>
+                <h1>做能追更，但不是流水线的长篇小说</h1>
+                <p class="hero-text">
+                    这套工坊主要面向大众连载读者：入口要直、钩子要强、章节要有追更动力。但它不会把故事压成流水线爽文，
+                    而是把重点放在悬念链、人物选择、阶段性兑现和完整因果上。你给一个念头，我们把它压成能写、能续、能改的长篇。
+                </p>
+                <div class="hero-tags">
+                    <span>悬疑脑洞</span>
+                    <span>都市脑洞</span>
+                    <span>科幻末世</span>
+                    <span>现言悬疑</span>
+                    <span>女频悬疑</span>
+                    <span>玄幻言情</span>
+                </div>
+            </div>
+            <aside class="hero-note">
+                <h2>连载适配原则</h2>
+                <ol>
+                    <li>前 3 章尽快立住主悬念、主角代价和追更问题。</li>
+                    <li>每 3 到 5 章形成一个小闭环，同时继续抬大谜团。</li>
+                    <li>让爽点来自人物选择和线索兑现，不靠重复打脸或重复升级。</li>
+                    <li>保留大众可读性，但拒绝恶意水文和模板式桥段。</li>
+                    <li>用记忆库持续追踪关键剧情、人物状态和伏笔兑现。</li>
+                    <li>整章统稿时继续去 AI 味和去流水线味。</li>
+                </ol>
+            </aside>
+        </header>
+
+        <main class="workspace">
+            <section class="panel panel-config">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 0</p>
+                        <h2>API 菜单</h2>
+                    </div>
+                </div>
+
+                <div class="api-panel">
+                    <div class="api-toolbar">
+                        <label class="field">
+                            <span>当前配置</span>
+                            <select id="api-profile-select">
+                                <option value="__env_default__">环境默认</option>
+                            </select>
+                        </label>
+                        <button id="new-api-profile" class="ghost-button" type="button">新建配置</button>
+                        <button id="save-api-profile" class="action-button" type="button">保存配置</button>
+                        <button id="delete-api-profile" class="ghost-button" type="button">删除配置</button>
+                    </div>
+
+                    <div class="field-grid api-grid">
+                        <label class="field">
+                            <span>配置名</span>
+                            <input id="api-profile-name" type="text" placeholder="例如：OpenAI / DeepSeek / 火山引擎">
+                        </label>
+                        <label class="field">
+                            <span>API 地址</span>
+                            <input id="api-base-url" type="text" placeholder="例如：https://api.openai.com/v1">
+                        </label>
+                        <label class="field">
+                            <span>API 密钥</span>
+                            <input id="api-key" type="password" placeholder="输入当前配置使用的 API Key">
+                        </label>
+                        <label class="field">
+                            <span>模型名</span>
+                            <input id="api-model" type="text" placeholder="例如：gpt-4.1-mini / deepseek-chat / doubao-seed">
+                        </label>
+                    </div>
+
+                    <p class="mini-note">留空时会回退到服务端环境变量。你可以保存多个配置，之后在上面直接切换；这些配置只保存在当前浏览器本地。</p>
+                </div>
+            </section>
+
+            <section class="panel panel-intake">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 1</p>
+                        <h2>想法输入</h2>
+                    </div>
+                    <div class="button-row">
+                        <button id="smart-autofill" class="ghost-button" type="button">智能补全空白项</button>
+                        <button id="lazy-start" class="action-button" type="button">一键懒人起书</button>
+                    </div>
+                </div>
+
+                <div class="preset-bar">
+                    <label class="field preset-field">
+                        <span>快速预设</span>
+                        <select id="preset-select">
+                            <option value="">先选一个连载预设模板</option>
+                            <option value="suspense">悬疑脑洞长篇</option>
+                            <option value="urban">都市脑洞连载</option>
+                            <option value="apocalypse">科幻末世连载</option>
+                            <option value="female-suspense">女频悬疑追更</option>
+                            <option value="romantasy">玄幻言情连载</option>
+                        </select>
+                    </label>
+                    <button id="apply-preset" class="ghost-button" type="button">应用预设</button>
+                    <p class="preset-hint">预设会先给你一个平台向连载基础盘；如果你懒得逐项填，直接点上面的“一键懒人起书”也可以。</p>
+                </div>
+
+                <label class="field">
+                    <span>核心想法</span>
+                    <textarea id="idea" rows="6" placeholder="比如：一个专门清理网络凶案现场的女主播，发现自己每次直播删掉的线索，都会在第二天变成真实命案的预告。"></textarea>
+                </label>
+
+                <div class="field-grid intake-grid">
+                    <label class="field choice-field">
+                        <span>类型</span>
+                        <div class="choice-with-custom">
+                            <select id="genre-select">
+                                <option value="">先选一个常用类型</option>
+                                <option value="悬疑脑洞">悬疑脑洞</option>
+                                <option value="都市脑洞">都市脑洞</option>
+                                <option value="科幻末世">科幻末世</option>
+                                <option value="女频悬疑">女频悬疑</option>
+                                <option value="现言悬疑">现言悬疑</option>
+                                <option value="玄幻言情">玄幻言情</option>
+                                <option value="古言脑洞">古言脑洞</option>
+                                <option value="历史脑洞">历史脑洞</option>
+                                <option value="都市日常">都市日常</option>
+                                <option value="现实情感">现实情感</option>
+                                <option value="__custom__">自定义</option>
+                            </select>
+                            <input id="genre-custom" type="text" placeholder="输入自定义类型，例如：民俗惊悚 / 医疗悬疑">
+                        </div>
+                    </label>
+                    <label class="field">
+                        <span>连载赛道</span>
+                        <select id="fanqie-track">
+                            <option value="">请选择更贴近的平台赛道</option>
+                            <option value="悬疑脑洞">悬疑脑洞</option>
+                            <option value="都市脑洞">都市脑洞</option>
+                            <option value="科幻末世">科幻末世</option>
+                            <option value="女频悬疑">女频悬疑</option>
+                            <option value="现言脑洞">现言脑洞</option>
+                            <option value="古言脑洞">古言脑洞</option>
+                            <option value="玄幻言情">玄幻言情</option>
+                            <option value="历史脑洞">历史脑洞</option>
+                            <option value="都市日常">都市日常</option>
+                            <option value="星光璀璨">星光璀璨</option>
+                            <option value="年代">年代</option>
+                            <option value="快穿">快穿</option>
+                            <option value="双男主">双男主</option>
+                            <option value="双女主">双女主</option>
+                            <option value="其他 / 混合赛道">其他 / 混合赛道</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>目标读者</span>
+                        <select id="readership">
+                            <option value="">请选择读者画像</option>
+                            <option value="男频大众连载读者：喜欢快节奏、强外部冲突和明确升级感">男频大众连载读者</option>
+                            <option value="女频大众连载读者：想看强关系、强情绪回报和持续追更点">女频大众连载读者</option>
+                            <option value="悬疑向连载读者：想看线索回收、持续追问和反转兑现">悬疑向连载读者</option>
+                            <option value="脑洞向连载读者：要设定新鲜、钩子明显、节奏偏快">脑洞向连载读者</option>
+                            <option value="现实向连载读者：想看生活质感、人物困境和持续推进">现实向连载读者</option>
+                            <option value="精品向连载读者：既要好读，也在意故事完整度和后劲">精品向连载读者</option>
+                        </select>
+                    </label>
+                    <label class="field choice-field">
+                        <span>目标总字数</span>
+                        <div class="choice-with-custom">
+                            <select id="target-length-select">
+                                <option value="">先选一个常用篇幅</option>
+                                <option value="8万字">8万字</option>
+                                <option value="12万字">12万字</option>
+                                <option value="15万字">15万字</option>
+                                <option value="18万字">18万字</option>
+                                <option value="20万字">20万字</option>
+                                <option value="25万字">25万字</option>
+                                <option value="30万字">30万字</option>
+                                <option value="40万字">40万字</option>
+                                <option value="50万字">50万字</option>
+                                <option value="__custom__">自定义</option>
+                            </select>
+                            <input id="target-length-custom" type="text" placeholder="输入自定义目标字数，例如：22万字 / 65万字">
+                        </div>
+                    </label>
+                    <label class="field">
+                        <span>预估章节数</span>
+                        <input id="chapter-count" type="text" list="chapter-count-options" placeholder="40">
+                    </label>
+                </div>
+
+                <div class="field-grid intake-grid">
+                    <label class="field">
+                        <span>第一钩子 / 核心悬念</span>
+                        <input id="hook-core" type="text" placeholder="例如：为什么她每次梦到的死者，都会在第二天登上本地新闻？">
+                        <small class="field-note">一句话说清读者第一章读完后最想继续追问的事。</small>
+                    </label>
+                    <label class="field">
+                        <span>整体气质</span>
+                        <input id="tone" type="text" list="tone-options" placeholder="冷感、锋利、诡异、压迫、热烈、黑色幽默">
+                    </label>
+                    <label class="field">
+                        <span>明确不要的套路</span>
+                        <input id="taboo" type="text" list="taboo-options" placeholder="不要机械打脸，不要纯升级复读，不要工业糖精，不要恶意水文">
+                    </label>
+                </div>
+
+                <p class="mini-note">建议把“读者看完第一章最想追问什么”写清楚；但如果你现在只想省事，直接让工坊先替你补一轮也没问题。后面点人物卡、大纲、正文这些按钮时，缺少前置资料也会尽量自动补上。</p>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 2</p>
+                        <h2>追问补全</h2>
+                    </div>
+                    <button id="generate-questions" class="action-button">生成关键追问</button>
+                </div>
+                <div class="panel-columns">
+                    <label class="field">
+                        <span>编辑追问</span>
+                        <textarea id="questions-output" rows="14" placeholder="这里会生成 6 到 8 个高价值追问。"></textarea>
+                    </label>
+                    <label class="field">
+                        <span>你的补充回答</span>
+                        <textarea id="answers" rows="14" placeholder="把你对追问的回答写在这里。可以逐条回答，也可以自由补充。智能补全也会先帮你给一版草稿。"></textarea>
+                    </label>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 3</p>
+                        <h2>故事圣经</h2>
+                    </div>
+                    <div class="button-row">
+                        <button id="generate-story-bible" class="action-button">整合故事圣经</button>
+                        <button class="ghost-button" data-copy-target="story-bible">复制</button>
+                    </div>
+                </div>
+                <label class="field">
+                    <span>故事圣经</span>
+                    <textarea id="story-bible" rows="18" placeholder="这里会沉淀出卖点、人物、冲突、风险点与开篇建议。"></textarea>
+                </label>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 4</p>
+                        <h2>人物卡与伏笔表</h2>
+                    </div>
+                    <div class="button-row">
+                        <button id="generate-characters" class="action-button">生成人物卡</button>
+                        <button id="generate-foreshadow" class="ghost-button">整理伏笔表</button>
+                    </div>
+                </div>
+                <div class="character-generator">
+                    <div class="character-generator-head">
+                        <div>
+                            <h3>人物生成菜单</h3>
+                            <p class="preset-hint">点“随机生成”先抽一版人物草稿。你可以自己改名字、身份、秘密和说话习惯，确认后再写入人物卡。</p>
+                        </div>
+                        <div class="button-row">
+                            <button id="random-character" class="ghost-button" type="button">随机生成</button>
+                            <button id="append-character-card" class="action-button" type="button">写入人物卡</button>
+                        </div>
+                    </div>
+                    <div class="field-grid character-menu-grid">
+                        <label class="field">
+                            <span>人物定位</span>
+                            <select id="character-role">
+                                <option value="">随机定位</option>
+                                <option value="主角">主角</option>
+                                <option value="核心对手">核心对手</option>
+                                <option value="关键配角">关键配角</option>
+                                <option value="关系角色">关系角色</option>
+                                <option value="神秘人物">神秘人物</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>性别倾向</span>
+                            <select id="character-gender">
+                                <option value="__random__">随机</option>
+                                <option value="女">女</option>
+                                <option value="男">男</option>
+                                <option value="模糊处理">模糊处理</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>名字</span>
+                            <input id="character-name" type="text" placeholder="例如：林见深 / 周既白">
+                        </label>
+                        <label class="field">
+                            <span>年龄</span>
+                            <input id="character-age" type="text" placeholder="例如：27">
+                        </label>
+                        <label class="field character-menu-wide">
+                            <span>表面身份</span>
+                            <input id="character-identity" type="text" placeholder="例如：夜班法医助理 / 旧城档案修复师">
+                        </label>
+                        <label class="field character-menu-wide">
+                            <span>与主线关系</span>
+                            <input id="character-relationship" type="text" placeholder="例如：他知道关键真相，却只能通过错误方式提醒主角。">
+                        </label>
+                        <label class="field">
+                            <span>外在识别点</span>
+                            <input id="character-look" type="text" placeholder="例如：总把衬衫袖口卷得很整齐，右手虎口有旧伤。">
+                        </label>
+                        <label class="field">
+                            <span>说话习惯</span>
+                            <input id="character-voice" type="text" placeholder="例如：句子短，先否认一句，再把真正想说的补半句。">
+                        </label>
+                        <label class="field character-menu-wide">
+                            <span>眼前目标</span>
+                            <textarea id="character-goal" rows="3" placeholder="这个人现在最想立刻做到什么。"></textarea>
+                        </label>
+                        <label class="field character-menu-wide">
+                            <span>深层恐惧</span>
+                            <textarea id="character-fear" rows="3" placeholder="这个人最不愿面对的失控点是什么。"></textarea>
+                        </label>
+                        <label class="field character-menu-wide">
+                            <span>核心秘密</span>
+                            <textarea id="character-secret" rows="3" placeholder="这个人藏着什么，暴露后会让局势怎么变。"></textarea>
+                        </label>
+                        <label class="field character-menu-wide">
+                            <span>行动习惯</span>
+                            <textarea id="character-habit" rows="3" placeholder="例如：说谎前会先替对方找理由，紧张时会摸杯沿。"></textarea>
+                        </label>
+                    </div>
+                </div>
+                <div class="panel-columns">
+                    <label class="field">
+                        <span>人物卡</span>
+                        <textarea id="character-bible" rows="18" placeholder="这里会整理主角、对手、关键配角、关系张力和对话声线。"></textarea>
+                    </label>
+                    <label class="field">
+                        <span>伏笔表</span>
+                        <textarea id="foreshadow-table" rows="18" placeholder="这里会输出可追踪的伏笔表和易失联线头。"></textarea>
+                    </label>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 5</p>
+                        <h2>大纲工坊</h2>
+                    </div>
+                    <div class="button-row">
+                        <button id="generate-outline" class="action-button">生成可写大纲</button>
+                        <button class="ghost-button" data-copy-target="outline-output">复制</button>
+                    </div>
+                </div>
+                <label class="field">
+                    <span>章节大纲</span>
+                    <textarea id="outline-output" rows="22" placeholder="这里会输出分幕大纲和逐章章节卡。"></textarea>
+                </label>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 6</p>
+                        <h2>反流水线护栏</h2>
+                    </div>
+                </div>
+                <label class="field">
+                    <span>可编辑的写作护栏</span>
+                    <textarea id="anti-ai-guard" rows="9">{{ anti_ai_guard }}</textarea>
+                </label>
+            </section>
+
+            <section class="panel panel-writing">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 7</p>
+                        <h2>按章节卡写正文</h2>
+                    </div>
+                    <div class="button-row">
+                        <button id="fill-from-outline" class="ghost-button">把大纲选中内容带入章节卡</button>
+                        <button id="append-current-to-archive" class="ghost-button">把当前章加入连载档案</button>
+                    </div>
+                </div>
+
+                <div class="field-grid writing-grid">
+                    <label class="field">
+                        <span>当前章节卡</span>
+                        <textarea id="chapter-beat" rows="12" placeholder="把大纲里某一章的章节卡放进来。懒人起书后也会尽量自动带入第一章。"></textarea>
+                    </label>
+                    <label class="field">
+                        <span>上一章摘要</span>
+                        <textarea id="previous-summary" rows="12" placeholder="用于保证前后衔接，没有也可以留空。刷新记忆库后会自动更新。"></textarea>
+                    </label>
+                </div>
+
+                <div class="field-grid compact-grid quick-grid">
+                    <label class="field">
+                        <span>本章目标字数</span>
+                        <select id="chapter-word-count">
+                            <option value="2000">2000</option>
+                            <option value="2500">2500</option>
+                            <option value="2800">2800</option>
+                            <option value="3000" selected>3000</option>
+                            <option value="3200">3200</option>
+                            <option value="3500">3500</option>
+                            <option value="4000">4000</option>
+                            <option value="4500">4500</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="button-row">
+                    <button id="generate-chapter" class="action-button">按章节卡写正文</button>
+                    <button id="refresh-memory" class="ghost-button">刷新记忆库</button>
+                    <button id="continue-next-chapter" class="ghost-button">自动续写下一章</button>
+                    <button id="polish-chapter" class="ghost-button">对当前正文去 AI 味改稿</button>
+                    <button class="ghost-button" data-copy-target="chapter-draft">复制正文</button>
+                </div>
+
+                <p class="mini-note">自动续写下一章时，会先把当前章节卡和正文存进“连载档案”，再同步更新写作区和记忆库。</p>
+
+                <label class="field">
+                    <span>正文输出</span>
+                    <textarea id="chapter-draft" rows="22" placeholder="这里会生成当前章节的正文。"></textarea>
+                </label>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 8</p>
+                        <h2>记忆管理与线头跟踪</h2>
+                    </div>
+                    <div class="button-row">
+                        <button class="ghost-button" data-copy-target="plot-memory">复制剧情记忆</button>
+                        <button class="ghost-button" data-copy-target="foreshadow-memory">复制伏笔记忆</button>
+                        <button class="ghost-button" data-copy-target="chapter-memory">复制连续记忆</button>
+                        <button class="ghost-button" data-copy-target="continuity-notes">复制记忆提醒</button>
+                    </div>
+                </div>
+                <div class="memory-stack">
+                    <div class="panel-columns">
+                        <label class="field">
+                            <span>关键剧情记忆</span>
+                            <textarea id="plot-memory" rows="16" placeholder="这里会沉淀当前项目必须记住的关键剧情、关系变化、代价和阶段推进。"></textarea>
+                        </label>
+                        <label class="field">
+                            <span>伏笔记忆库</span>
+                            <textarea id="foreshadow-memory" rows="16" placeholder="这里会记录伏笔、当前线索、回收方向和紧迫度。"></textarea>
+                        </label>
+                    </div>
+                    <div class="panel-columns">
+                        <label class="field">
+                            <span>连续写作记忆</span>
+                            <textarea id="chapter-memory" rows="16" placeholder="这里会压缩成给下一章直接调用的连续写作记忆。"></textarea>
+                        </label>
+                        <label class="field">
+                            <span>记忆提醒 / 未兑现线头</span>
+                            <textarea id="continuity-notes" rows="16" placeholder="这里会记录最容易断线的剧情、人物状态和必须继续提及的细节。"></textarea>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 9</p>
+                        <h2>连载档案与整章统稿</h2>
+                    </div>
+                    <div class="button-row">
+                        <button id="batch-polish-archive" class="action-button">整章批量去 AI 味</button>
+                        <button class="ghost-button" data-copy-target="chapter-archive">复制连载档案</button>
+                        <button class="ghost-button" data-copy-target="batch-polish-output">复制统稿结果</button>
+                    </div>
+                </div>
+                <div class="panel-columns">
+                    <label class="field">
+                        <span>连载档案</span>
+                        <textarea id="chapter-archive" rows="24" placeholder="这里会按章节保存你已经写好的正文，适合长期项目做连续写作和批量统稿。"></textarea>
+                    </label>
+                    <label class="field">
+                        <span>整章统稿输出</span>
+                        <textarea id="batch-polish-output" rows="24" placeholder="这里会输出批量去 AI 味后的整章稿。"></textarea>
+                    </label>
+                </div>
+            </section>
+        </main>
+
+        <footer class="status-bar">
+            <div id="status-text">准备好了。只写一个核心想法也行，先点“智能补全空白项”或直接“一键懒人起书”；后续缺前置资料时也会尽量自动补齐。</div>
+        </footer>
+    </div>
+
+    <datalist id="chapter-count-options">
+        <option value="30"></option>
+        <option value="40"></option>
+        <option value="50"></option>
+        <option value="60"></option>
+        <option value="80"></option>
+        <option value="100"></option>
+    </datalist>
+
+    <datalist id="tone-options">
+        <option value="冷感压迫"></option>
+        <option value="锋利克制"></option>
+        <option value="诡异日常"></option>
+        <option value="黑色幽默"></option>
+        <option value="高燃紧绷"></option>
+        <option value="暧昧危险"></option>
+        <option value="现实粗粝"></option>
+        <option value="阴冷悬疑"></option>
+    </datalist>
+
+    <datalist id="taboo-options">
+        <option value="不要机械打脸"></option>
+        <option value="不要工业糖精"></option>
+        <option value="不要万能系统兜底"></option>
+        <option value="不要无意义嘴炮"></option>
+        <option value="不要恶意水文"></option>
+        <option value="不要强行反转"></option>
+        <option value="不要重复误会拉扯"></option>
+    </datalist>
+
+    <script src="{{ url_for('static', filename='novel_workshop.js') }}"></script>
+</body>
+</html>

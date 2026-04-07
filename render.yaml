@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: serial-story-studio
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEN1_BASE_URL
+        value: https://api.openai.com/v1
+      - key: GEN1_API_KEY
+        sync: false
+      - key: GEN1_MODEL
+        sync: false
+      - key: GEN2_BASE_URL
+        sync: false
+      - key: GEN2_API_KEY
+        sync: false
+      - key: GEN2_MODEL
+        sync: false
