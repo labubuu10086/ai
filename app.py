@@ -1,18 +1,28 @@
 ﻿import logging
+import json
 import os
 import re
+import sqlite3
 import time
+from pathlib import Path
 from textwrap import dedent
 from typing import Iterator
 
 from dotenv import load_dotenv
-from flask import Flask, Response, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 from openai import OpenAI
+
+try:
+    import psycopg
+except ImportError:
+    psycopg = None
 
 load_dotenv()
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
+ARCHIVE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+ARCHIVE_LOCAL_DB_PATH = Path(__file__).resolve().parent / "storage" / "archives.sqlite3"
 
 ANTI_AI_GUARD_DEFAULT = dedent(
     """
@@ -101,6 +111,118 @@ def get_setting(name: str, fallback: str | None = None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def get_archive_database_url() -> str | None:
+    return get_setting("ARCHIVE_DATABASE_URL") or get_setting("DATABASE_URL")
+
+
+def is_postgres_url(database_url: str | None) -> bool:
+    if not database_url:
+        return False
+    return database_url.startswith("postgres://") or database_url.startswith("postgresql://")
+
+
+def ensure_archive_table() -> None:
+    database_url = get_archive_database_url()
+    if is_postgres_url(database_url):
+        if psycopg is None:
+            raise RuntimeError("已配置数据库存档，但当前环境未安装 psycopg。请重新安装依赖。")
+        with psycopg.connect(database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS archives (
+                        archive_id TEXT PRIMARY KEY,
+                        payload TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            conn.commit()
+        return
+
+    ARCHIVE_LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(ARCHIVE_LOCAL_DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS archives (
+                archive_id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.commit()
+
+
+def validate_archive_id(raw_archive_id: str) -> str:
+    archive_id = raw_archive_id.strip()
+    if not ARCHIVE_ID_PATTERN.match(archive_id):
+        raise ValueError("存档编号格式不合法，请使用 8 到 64 位字母、数字、下划线或短横线。")
+    return archive_id
+
+
+def save_archive_snapshot(archive_id: str, payload: dict) -> None:
+    ensure_archive_table()
+    body = json.dumps(payload, ensure_ascii=False)
+    database_url = get_archive_database_url()
+
+    if is_postgres_url(database_url):
+        with psycopg.connect(database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO archives (archive_id, payload)
+                    VALUES (%s, %s)
+                    ON CONFLICT (archive_id)
+                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+                    """,
+                    (archive_id, body),
+                )
+            conn.commit()
+        return
+
+    ARCHIVE_LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(ARCHIVE_LOCAL_DB_PATH) as conn:
+        conn.execute(
+            """
+            INSERT INTO archives (archive_id, payload, created_at, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(archive_id)
+            DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+            """,
+            (archive_id, body),
+        )
+        conn.commit()
+
+
+def load_archive_snapshot(archive_id: str) -> dict | None:
+    ensure_archive_table()
+    database_url = get_archive_database_url()
+
+    if is_postgres_url(database_url):
+        with psycopg.connect(database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT payload, updated_at FROM archives WHERE archive_id = %s", (archive_id,))
+                row = cur.fetchone()
+        if not row:
+            return None
+        payload = json.loads(row[0])
+        payload["_updated_at"] = str(row[1])
+        return payload
+
+    if not ARCHIVE_LOCAL_DB_PATH.exists():
+        return None
+    with sqlite3.connect(ARCHIVE_LOCAL_DB_PATH) as conn:
+        row = conn.execute("SELECT payload, updated_at FROM archives WHERE archive_id = ?", (archive_id,)).fetchone()
+    if not row:
+        return None
+    payload = json.loads(row[0])
+    payload["_updated_at"] = str(row[1])
+    return payload
 
 
 def get_model_config(prefix: str) -> dict[str, str | None]:
@@ -1297,6 +1419,63 @@ def build_batch_polish_messages(data: dict) -> list[dict[str, str]]:
 @app.route("/studio")
 def studio():
     return render_template("novel_workshop.html", anti_ai_guard=ANTI_AI_GUARD_DEFAULT)
+
+
+@app.route("/healthz")
+def healthz():
+    return jsonify(
+        {
+            "ok": True,
+            "archive_backend": "postgres" if is_postgres_url(get_archive_database_url()) else "local",
+        }
+    )
+
+
+@app.route("/api/archive/save", methods=["POST"])
+def archive_save():
+    data = request.get_json(silent=True) or {}
+    try:
+        archive_id = validate_archive_id(get_text(data, "archive_id"))
+    except ValueError as exc:
+        return error_response(str(exc))
+
+    payload = data.get("payload")
+    if not isinstance(payload, dict) or not payload:
+        return error_response("请先提供要保存的存档内容。")
+
+    try:
+        save_archive_snapshot(archive_id, payload)
+    except RuntimeError as exc:
+        app.logger.error(str(exc))
+        return error_response(str(exc), status=500)
+    except Exception as exc:
+        app.logger.error("Archive save failed: %s", exc)
+        return error_response("存档保存失败，请稍后重试。", status=500)
+
+    return jsonify({"ok": True, "archive_id": archive_id})
+
+
+@app.route("/api/archive/load", methods=["POST"])
+def archive_load():
+    data = request.get_json(silent=True) or {}
+    try:
+        archive_id = validate_archive_id(get_text(data, "archive_id"))
+    except ValueError as exc:
+        return error_response(str(exc))
+
+    try:
+        payload = load_archive_snapshot(archive_id)
+    except RuntimeError as exc:
+        app.logger.error(str(exc))
+        return error_response(str(exc), status=500)
+    except Exception as exc:
+        app.logger.error("Archive load failed: %s", exc)
+        return error_response("存档读取失败，请稍后重试。", status=500)
+
+    if not payload:
+        return error_response("没有找到这个存档，请确认存档编号是否正确。", status=404)
+
+    return jsonify({"ok": True, "archive_id": archive_id, "payload": payload})
 
 
 @app.route("/api/novel/autofill", methods=["POST"])

@@ -12,6 +12,7 @@ const fieldIds = [
     "api-base-url",
     "api-key",
     "api-model",
+    "archive-id",
     "idea",
     "genre-select",
     "genre-custom",
@@ -61,6 +62,14 @@ const memorySectionMap = {
     PREVIOUS_SUMMARY: "previous-summary",
     MEMORY_ALERTS: "continuity-notes",
 };
+
+const archiveFieldIds = fieldIds.filter((id) => ![
+    "api-profile-select",
+    "api-profile-name",
+    "api-base-url",
+    "api-key",
+    "api-model",
+].includes(id));
 
 const presetDefinitions = {
     suspense: {
@@ -219,6 +228,8 @@ const characterFlavorPools = {
 };
 
 let apiProfiles = [];
+let archiveAutosaveTimer = null;
+let archiveLoadInProgress = false;
 
 function byId(id) {
     return document.getElementById(id);
@@ -615,6 +626,7 @@ function getRuntimeApiProfile() {
 function getPayload() {
     return {
         api_profile: getRuntimeApiProfile(),
+        archive_id: getFieldValue("archive-id"),
         idea: getFieldValue("idea"),
         genre: resolveChoiceValue("genre-select", "genre-custom"),
         fanqie_track: getFieldValue("fanqie-track"),
@@ -640,6 +652,48 @@ function getPayload() {
         continuity_notes: getFieldValue("continuity-notes"),
         chapter_archive: getFieldValue("chapter-archive"),
     };
+}
+
+function createArchiveId() {
+    const seed = Math.random().toString(36).slice(2, 10);
+    return `novel-${seed}`;
+}
+
+function buildArchiveSnapshot() {
+    const state = {};
+    archiveFieldIds.forEach((id) => {
+        const field = byId(id);
+        if (field) {
+            state[id] = field.value;
+        }
+    });
+    return {
+        version: 1,
+        saved_at: new Date().toISOString(),
+        state,
+    };
+}
+
+function applyArchiveSnapshot(payload) {
+    const state = payload?.state;
+    if (!state || typeof state !== "object") {
+        throw new Error("存档内容格式不正确。");
+    }
+
+    archiveLoadInProgress = true;
+    try {
+        archiveFieldIds.forEach((id) => {
+            const field = byId(id);
+            if (field && typeof state[id] === "string") {
+                field.value = state[id];
+            }
+        });
+        syncChoiceField("genre-select", "genre-custom");
+        syncChoiceField("target-length-select", "target-length-custom");
+        saveState();
+    } finally {
+        archiveLoadInProgress = false;
+    }
 }
 
 function saveState() {
@@ -726,6 +780,23 @@ async function requestPlainText({ endpoint, payload, onChunk }) {
     }
 
     return readResponseText(response, onChunk);
+}
+
+async function requestJSON({ endpoint, payload }) {
+    const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "请求失败");
+    }
+
+    return response.json();
 }
 
 async function streamIntoTarget({ endpoint, targetId, payload, preserveExisting = false }) {
@@ -828,6 +899,60 @@ async function runButtonTask(buttonId, task) {
     } finally {
         button.disabled = false;
     }
+}
+
+async function saveArchive({ silent = false } = {}) {
+    let archiveId = getFieldValue("archive-id");
+    if (!archiveId) {
+        archiveId = createArchiveId();
+        setFieldValue("archive-id", archiveId);
+        saveState();
+    }
+
+    await requestJSON({
+        endpoint: "/api/archive/save",
+        payload: {
+            archive_id: archiveId,
+            payload: buildArchiveSnapshot(),
+        },
+    });
+
+    if (!silent) {
+        setStatus(`云端存档已保存：${archiveId}`, "done");
+    }
+    return archiveId;
+}
+
+async function loadArchive() {
+    const archiveId = getFieldValue("archive-id");
+    if (!archiveId) {
+        throw new Error("先输入或新建一个存档编号，再读取存档。");
+    }
+
+    const result = await requestJSON({
+        endpoint: "/api/archive/load",
+        payload: { archive_id: archiveId },
+    });
+    applyArchiveSnapshot(result.payload);
+    setStatus(`已读取云端存档：${archiveId}`, "done");
+}
+
+function scheduleArchiveAutosave() {
+    if (archiveLoadInProgress) {
+        return;
+    }
+    const archiveId = getFieldValue("archive-id");
+    if (!archiveId) {
+        return;
+    }
+
+    clearTimeout(archiveAutosaveTimer);
+    archiveAutosaveTimer = setTimeout(() => {
+        saveArchive({ silent: true }).catch((error) => {
+            console.error(error);
+            setStatus(error.message || "云端自动保存失败。", "error");
+        });
+    }, 1500);
 }
 
 async function ensureAutofillSeedReady() {
@@ -1206,8 +1331,18 @@ function bindPersistence() {
         if (!field) {
             return;
         }
-        field.addEventListener("input", saveState);
-        field.addEventListener("change", saveState);
+        field.addEventListener("input", () => {
+            saveState();
+            if (id !== "api-key") {
+                scheduleArchiveAutosave();
+            }
+        });
+        field.addEventListener("change", () => {
+            saveState();
+            if (id !== "api-key") {
+                scheduleArchiveAutosave();
+            }
+        });
     });
 }
 
@@ -1331,6 +1466,33 @@ async function runLazyStartWorkflow() {
 }
 
 function bindButtons() {
+    byId("new-archive").addEventListener("click", () => {
+        const archiveId = createArchiveId();
+        setFieldValue("archive-id", archiveId);
+        saveState();
+        saveArchive({ silent: true }).then(() => {
+            setStatus(`已新建云端存档：${archiveId}`, "done");
+        }).catch((error) => {
+            console.error(error);
+            setStatus(error.message || "新建云端存档失败。", "error");
+        });
+    });
+
+    byId("save-archive").addEventListener("click", () => {
+        runButtonTask("save-archive", async () => {
+            setStatus("正在保存云端存档。", "working");
+            await saveArchive({ silent: true });
+            setStatus(`云端存档已保存：${getFieldValue("archive-id")}`, "done");
+        });
+    });
+
+    byId("load-archive").addEventListener("click", () => {
+        runButtonTask("load-archive", async () => {
+            setStatus("正在读取云端存档。", "working");
+            await loadArchive();
+        });
+    });
+
     byId("smart-autofill").addEventListener("click", runSmartAutofill);
     byId("lazy-start").addEventListener("click", runLazyStartWorkflow);
 

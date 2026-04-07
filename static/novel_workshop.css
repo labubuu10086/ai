@@ -266,6 +266,15 @@ body::after {
     gap: 16px;
 }
 
+.archive-panel {
+    display: grid;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 20px;
+    background: rgba(255, 246, 229, 0.72);
+    border: 1px solid rgba(114, 48, 16, 0.12);
+}
+
 .api-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 280px) auto auto auto;

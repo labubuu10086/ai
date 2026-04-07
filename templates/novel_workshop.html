@@ -84,6 +84,28 @@
                 </div>
             </section>
 
+            <section class="panel panel-config">
+                <div class="panel-header">
+                    <div>
+                        <p class="step-label">Step 0.5</p>
+                        <h2>云端存档</h2>
+                    </div>
+                    <div class="button-row">
+                        <button id="new-archive" class="ghost-button" type="button">新建存档</button>
+                        <button id="save-archive" class="action-button" type="button">保存到云端</button>
+                        <button id="load-archive" class="ghost-button" type="button">读取存档</button>
+                    </div>
+                </div>
+
+                <div class="archive-panel">
+                    <label class="field">
+                        <span>存档编号</span>
+                        <input id="archive-id" type="text" placeholder="例如：novel-7f3a2c9d">
+                    </label>
+                    <p class="mini-note">同一个存档编号可以在手机和电脑之间共用。当前浏览器仍会保留本地草稿；如果填了存档编号，编辑时也会尽量自动同步到云端。</p>
+                </div>
+            </section>
+
             <section class="panel panel-intake">
                 <div class="panel-header">
                     <div>
