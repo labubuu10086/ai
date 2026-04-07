@@ -113,6 +113,16 @@ def get_setting(name: str, fallback: str | None = None) -> str | None:
     return value or None
 
 
+def get_float_setting(name: str, fallback: float) -> float:
+    value = get_setting(name)
+    if value is None:
+        return fallback
+    try:
+        return float(value)
+    except ValueError:
+        return fallback
+
+
 def get_archive_database_url() -> str | None:
     return get_setting("ARCHIVE_DATABASE_URL") or get_setting("DATABASE_URL")
 
@@ -283,6 +293,8 @@ def create_client(config: dict[str, str | None]) -> OpenAI:
     return OpenAI(
         base_url=config["base_url"],
         api_key=config["api_key"],
+        timeout=get_float_setting("OPENAI_TIMEOUT_SECONDS", 90.0),
+        max_retries=0,
     )
 
 
@@ -755,7 +767,7 @@ def build_autofill_messages(data: dict) -> list[dict[str, str]]:
 
 def build_story_bible_messages(data: dict) -> list[dict[str, str]]:
     project_brief = build_project_brief(data)
-    answers = get_text(data, "answers")
+    answers = clip_text(get_text(data, "answers"), 5000, "head")
     anti_ai_guard = get_text(data, "anti_ai_guard", ANTI_AI_GUARD_DEFAULT)
 
     system_prompt = dedent(
@@ -793,6 +805,7 @@ def build_story_bible_messages(data: dict) -> list[dict[str, str]]:
         # 容易写出AI味或流水线味的风险点
         # 写作禁忌
         # 结局兑现方向
+        总篇幅尽量控制在 2500 到 4200 字内，宁可更凝练，也不要无限展开。
         """
     ).strip()
 
@@ -818,9 +831,9 @@ def build_story_bible_messages(data: dict) -> list[dict[str, str]]:
 
 
 def build_character_bible_messages(data: dict) -> list[dict[str, str]]:
-    story_bible = get_text(data, "story_bible")
-    outline = get_text(data, "outline", "暂无大纲，可结合故事圣经先做人物卡。")
-    existing_character_notes = clip_text(get_text(data, "character_bible", "无"), 4000, "head")
+    story_bible = clip_text(get_text(data, "story_bible"), 7000, "head")
+    outline = clip_text(get_text(data, "outline", "暂无大纲，可结合故事圣经先做人物卡。"), 5000, "head")
+    existing_character_notes = clip_text(get_text(data, "character_bible", "无"), 2500, "head")
     character_anchors = extract_character_anchors(existing_character_notes)
     tone = get_text(data, "tone", "未指定")
     anti_ai_guard = get_text(data, "anti_ai_guard", ANTI_AI_GUARD_DEFAULT)
@@ -866,6 +879,7 @@ def build_character_bible_messages(data: dict) -> list[dict[str, str]]:
         - 行动习惯
         - 对话习惯
         - 最容易写崩的地方
+        总篇幅尽量控制在 2600 到 4200 字内，优先写能直接指导落笔的部分。
         """
     ).strip()
 
@@ -900,9 +914,9 @@ def build_character_bible_messages(data: dict) -> list[dict[str, str]]:
 
 
 def build_foreshadow_messages(data: dict) -> list[dict[str, str]]:
-    story_bible = get_text(data, "story_bible")
-    outline = get_text(data, "outline")
-    character_bible = get_text(data, "character_bible", "暂无人物卡。")
+    story_bible = clip_text(get_text(data, "story_bible"), 6000, "head")
+    outline = clip_text(get_text(data, "outline"), 7000, "head")
+    character_bible = clip_text(get_text(data, "character_bible", "暂无人物卡。"), 5000, "head")
 
     system_prompt = dedent(
         f"""
@@ -919,6 +933,7 @@ def build_foreshadow_messages(data: dict) -> list[dict[str, str]]:
         5. 如果大纲里有明显没回收的线，直接指出。
         6. 至少三分之一的伏笔应属于人物、关系、错误判断或情绪余波，而不是纯线索道具。
         7. “读者先看到什么”里要写清表象和误导层；“真相或回收方向”里要写清重解释的落点。
+        8. 优先输出 10 到 16 条最关键的伏笔，不要把边角线头全摊开。
         """
     ).strip()
 
@@ -944,7 +959,7 @@ def build_foreshadow_messages(data: dict) -> list[dict[str, str]]:
 
 
 def build_outline_messages(data: dict) -> list[dict[str, str]]:
-    story_bible = get_text(data, "story_bible")
+    story_bible = clip_text(get_text(data, "story_bible"), 8000, "head")
     target_length = get_text(data, "target_length", "未指定")
     chapter_count = get_text(data, "chapter_count", "12")
     tone = get_text(data, "tone", "未指定")
@@ -993,6 +1008,7 @@ def build_outline_messages(data: dict) -> list[dict[str, str]]:
         - 写作时要避免的套路
         # 伏笔、假线索与回收表
         # 去AI味执行清单
+        如果预计章节数大于 30，请优先细写前 12 章与关键转折，后续章节用分幕和章节簇概述，不要一次性把几十章都展开到极细。
         """
     ).strip()
 
@@ -1024,18 +1040,18 @@ def build_outline_messages(data: dict) -> list[dict[str, str]]:
 
 
 def build_chapter_messages(data: dict) -> list[dict[str, str]]:
-    outline = get_text(data, "outline")
-    chapter_beat = get_text(data, "chapter_beat")
+    outline = clip_text(get_text(data, "outline"), 9000, "head")
+    chapter_beat = clip_text(get_text(data, "chapter_beat"), 3500, "head")
     previous_summary = get_text(data, "previous_summary", "无")
     chapter_word_count = get_text(data, "chapter_word_count", "3000")
     tone = get_text(data, "tone", "未指定")
     anti_ai_guard = get_text(data, "anti_ai_guard", ANTI_AI_GUARD_DEFAULT)
-    character_bible = get_text(data, "character_bible", "暂无人物卡。")
-    foreshadow_table = get_text(data, "foreshadow_table", "暂无伏笔表。")
-    plot_memory = get_text(data, "plot_memory", "暂无关键剧情记忆。")
-    foreshadow_memory = get_text(data, "foreshadow_memory", "暂无伏笔记忆库。")
-    chapter_memory = get_text(data, "chapter_memory", "暂无连续记忆。")
-    continuity_notes = get_text(data, "continuity_notes", "暂无记忆提醒。")
+    character_bible = clip_text(get_text(data, "character_bible", "暂无人物卡。"), 6000, "head")
+    foreshadow_table = clip_text(get_text(data, "foreshadow_table", "暂无伏笔表。"), 5000, "head")
+    plot_memory = clip_text(get_text(data, "plot_memory", "暂无关键剧情记忆。"), 4000, "head")
+    foreshadow_memory = clip_text(get_text(data, "foreshadow_memory", "暂无伏笔记忆库。"), 4000, "head")
+    chapter_memory = clip_text(get_text(data, "chapter_memory", "暂无连续记忆。"), 3500, "head")
+    continuity_notes = clip_text(get_text(data, "continuity_notes", "暂无记忆提醒。"), 2500, "head")
 
     system_prompt = dedent(
         f"""
@@ -1199,16 +1215,16 @@ def build_memory_messages(data: dict) -> list[dict[str, str]]:
     ]
 
 def build_continue_messages(data: dict) -> list[dict[str, str]]:
-    outline = get_text(data, "outline")
-    character_bible = get_text(data, "character_bible", "暂无人物卡。")
-    foreshadow_table = get_text(data, "foreshadow_table", "暂无伏笔表。")
-    plot_memory = get_text(data, "plot_memory", "暂无关键剧情记忆。")
-    foreshadow_memory = get_text(data, "foreshadow_memory", "暂无伏笔记忆库。")
-    chapter_memory = get_text(data, "chapter_memory", "暂无连续记忆。")
-    continuity_notes = get_text(data, "continuity_notes", "暂无记忆提醒。")
-    chapter_archive = clip_text(get_text(data, "chapter_archive", "无"), 14000, "tail")
-    chapter_beat = get_text(data, "chapter_beat", "无")
-    draft = get_text(data, "draft", "无")
+    outline = clip_text(get_text(data, "outline"), 9000, "head")
+    character_bible = clip_text(get_text(data, "character_bible", "暂无人物卡。"), 6000, "head")
+    foreshadow_table = clip_text(get_text(data, "foreshadow_table", "暂无伏笔表。"), 5000, "head")
+    plot_memory = clip_text(get_text(data, "plot_memory", "暂无关键剧情记忆。"), 4000, "head")
+    foreshadow_memory = clip_text(get_text(data, "foreshadow_memory", "暂无伏笔记忆库。"), 4000, "head")
+    chapter_memory = clip_text(get_text(data, "chapter_memory", "暂无连续记忆。"), 3500, "head")
+    continuity_notes = clip_text(get_text(data, "continuity_notes", "暂无记忆提醒。"), 2500, "head")
+    chapter_archive = clip_text(get_text(data, "chapter_archive", "无"), 9000, "tail")
+    chapter_beat = clip_text(get_text(data, "chapter_beat", "无"), 3000, "head")
+    draft = clip_text(get_text(data, "draft", "无"), 6000, "tail")
     previous_summary = get_text(data, "previous_summary", "无")
     chapter_word_count = get_text(data, "chapter_word_count", "3000")
     tone = get_text(data, "tone", "未指定")
@@ -1303,14 +1319,14 @@ def build_continue_messages(data: dict) -> list[dict[str, str]]:
     ]
 
 def build_polish_messages(data: dict) -> list[dict[str, str]]:
-    draft = get_text(data, "draft")
-    outline = get_text(data, "outline", "无")
-    chapter_beat = get_text(data, "chapter_beat", "无")
-    character_bible = get_text(data, "character_bible", "暂无人物卡。")
-    plot_memory = get_text(data, "plot_memory", "暂无关键剧情记忆。")
-    foreshadow_memory = get_text(data, "foreshadow_memory", "暂无伏笔记忆库。")
-    chapter_memory = get_text(data, "chapter_memory", "暂无连续记忆。")
-    continuity_notes = get_text(data, "continuity_notes", "暂无记忆提醒。")
+    draft = clip_text(get_text(data, "draft"), 9000, "tail")
+    outline = clip_text(get_text(data, "outline", "无"), 7000, "head")
+    chapter_beat = clip_text(get_text(data, "chapter_beat", "无"), 3000, "head")
+    character_bible = clip_text(get_text(data, "character_bible", "暂无人物卡。"), 5000, "head")
+    plot_memory = clip_text(get_text(data, "plot_memory", "暂无关键剧情记忆。"), 3000, "head")
+    foreshadow_memory = clip_text(get_text(data, "foreshadow_memory", "暂无伏笔记忆库。"), 3000, "head")
+    chapter_memory = clip_text(get_text(data, "chapter_memory", "暂无连续记忆。"), 2500, "head")
+    continuity_notes = clip_text(get_text(data, "continuity_notes", "暂无记忆提醒。"), 2000, "head")
     anti_ai_guard = get_text(data, "anti_ai_guard", ANTI_AI_GUARD_DEFAULT)
 
     system_prompt = dedent(
@@ -1371,8 +1387,8 @@ def build_polish_messages(data: dict) -> list[dict[str, str]]:
     ]
 
 def build_batch_polish_messages(data: dict) -> list[dict[str, str]]:
-    chapter_archive = get_text(data, "chapter_archive")
-    character_bible = get_text(data, "character_bible", "暂无人物卡。")
+    chapter_archive = clip_text(get_text(data, "chapter_archive"), 12000, "tail")
+    character_bible = clip_text(get_text(data, "character_bible", "暂无人物卡。"), 5000, "head")
     anti_ai_guard = get_text(data, "anti_ai_guard", ANTI_AI_GUARD_DEFAULT)
 
     system_prompt = dedent(
