@@ -11,6 +11,7 @@ from typing import Iterator
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request
 from openai import OpenAI
+import requests
 
 try:
     import psycopg
@@ -298,6 +299,117 @@ def create_client(config: dict[str, str | None]) -> OpenAI:
     )
 
 
+def get_http_timeout() -> tuple[float, float]:
+    total = get_float_setting("OPENAI_TIMEOUT_SECONDS", 90.0)
+    connect_timeout = min(15.0, max(5.0, total / 3))
+    read_timeout = max(20.0, total)
+    return (connect_timeout, read_timeout)
+
+
+def build_chat_completions_url(base_url: str | None) -> str:
+    normalized = (base_url or "https://api.openai.com/v1").rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        return normalized
+    return f"{normalized}/chat/completions"
+
+
+def build_chat_request_payload(
+    config: dict[str, str | None],
+    messages: list[dict[str, str]],
+    temperature: float | None,
+    stream: bool,
+) -> dict:
+    payload = {
+        "model": config["model"],
+        "messages": messages,
+        "stream": stream,
+    }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    return payload
+
+
+def build_chat_request_headers(config: dict[str, str | None]) -> dict[str, str]:
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {config['api_key']}",
+    }
+    return headers
+
+
+def format_provider_error(response: requests.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        body = response.text.strip() or "<empty>"
+    return f"Error code: {response.status_code}-{body}"
+
+
+def extract_text_from_message_content(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                if item.get("type") == "text" and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+                elif isinstance(item.get("content"), str):
+                    parts.append(item["content"])
+        return "".join(parts)
+    return ""
+
+
+def extract_completion_text(response_json: dict) -> str:
+    choices = response_json.get("choices") or []
+    parts = []
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message") or {}
+        content = extract_text_from_message_content(message.get("content"))
+        if content:
+            parts.append(content)
+    return "".join(parts).strip()
+
+
+def iter_stream_text(response: requests.Response) -> Iterator[str]:
+    for raw_line in response.iter_lines(decode_unicode=True):
+        if not raw_line:
+            continue
+
+        line = raw_line.strip()
+        if not line or line.startswith(":"):
+            continue
+
+        if line.startswith("data:"):
+            line = line[5:].strip()
+
+        if line == "[DONE]":
+            break
+
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        choices = payload.get("choices") or []
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta") or {}
+            content = extract_text_from_message_content(delta.get("content"))
+            if content:
+                yield content
+                continue
+            message = choice.get("message") or {}
+            content = extract_text_from_message_content(message.get("content"))
+            if content:
+                yield content
+
+
 def get_text(data: dict, key: str, fallback: str = "") -> str:
     value = data.get(key, fallback)
     if value is None:
@@ -540,20 +652,28 @@ def open_completion(
     if error:
         raise ValueError(error)
 
-    client = create_client(config)
-    request_kwargs = {
-        "model": config["model"],
-        "messages": messages,
-        "stream": True,
-    }
-    if temperature is not None:
-        request_kwargs["temperature"] = temperature
-
     last_error = None
     for attempt in range(3):
         try:
-            return client.chat.completions.create(**request_kwargs)
-        except Exception as exc:
+            response = requests.post(
+                build_chat_completions_url(config["base_url"]),
+                headers=build_chat_request_headers(config),
+                json=build_chat_request_payload(config, messages, temperature, True),
+                timeout=get_http_timeout(),
+                stream=True,
+            )
+            if response.status_code >= 400:
+                response.close()
+                raise RuntimeError(format_provider_error(response))
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+            app.logger.warning("Open completion failed on attempt %s: %s", attempt + 1, exc)
+            if attempt < 2 and should_retry(exc):
+                time.sleep(3 * (attempt + 1))
+                continue
+            break
+        except RuntimeError as exc:
             last_error = exc
             app.logger.warning("Open completion failed on attempt %s: %s", attempt + 1, exc)
             if attempt < 2 and should_retry(exc):
@@ -575,21 +695,26 @@ def open_completion_text(
     if error:
         raise ValueError(error)
 
-    client = create_client(config)
-    request_kwargs = {
-        "model": config["model"],
-        "messages": messages,
-        "stream": False,
-    }
-    if temperature is not None:
-        request_kwargs["temperature"] = temperature
-
     last_error = None
     for attempt in range(3):
         try:
-            completion = client.chat.completions.create(**request_kwargs)
-            return completion.choices[0].message.content or ""
-        except Exception as exc:
+            response = requests.post(
+                build_chat_completions_url(config["base_url"]),
+                headers=build_chat_request_headers(config),
+                json=build_chat_request_payload(config, messages, temperature, False),
+                timeout=get_http_timeout(),
+            )
+            if response.status_code >= 400:
+                raise RuntimeError(format_provider_error(response))
+            return extract_completion_text(response.json())
+        except requests.RequestException as exc:
+            last_error = exc
+            app.logger.warning("Open completion text failed on attempt %s: %s", attempt + 1, exc)
+            if attempt < 2 and should_retry(exc):
+                time.sleep(3 * (attempt + 1))
+                continue
+            break
+        except RuntimeError as exc:
             last_error = exc
             app.logger.warning("Open completion text failed on attempt %s: %s", attempt + 1, exc)
             if attempt < 2 and should_retry(exc):
@@ -621,8 +746,7 @@ def make_stream_response(
     def generate() -> Iterator[str]:
         yielded_any = False
         try:
-            for chunk in completion:
-                delta = chunk.choices[0].delta.content
+            for delta in iter_stream_text(completion):
                 if delta:
                     yielded_any = True
                     yield delta
@@ -639,6 +763,11 @@ def make_stream_response(
             message = f"Stream interrupted: {exc}"
             app.logger.error(message)
             yield message
+        finally:
+            try:
+                completion.close()
+            except Exception:
+                pass
 
     return Response(generate(), mimetype="text/plain")
 
