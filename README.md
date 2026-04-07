@@ -29,11 +29,6 @@
 
 
 
-在线体验 http://ssss.baby:20000
-
-
-
-
 ```
 赛博朋克修仙世界：氪金飞升指南
 ——“你的灵根余额不足，请充值。”
@@ -270,8 +265,8 @@
 ## 安装说明
 
 ```bash
-git clone https://github.com/wfcz10086/AI-automatically-generates-novels.git
-cd AI-automatically-generates-novels
+git clone https://github.com/labubuu10086/ai.git
+cd ai
 pip install -r requirements.txt
 python app.py
 ```
@@ -350,7 +345,5 @@ MIT License
 
 ## 问题反馈
 
-![图片](jpg/二维码.png)
-
-- 项目主页：[GitHub](https://github.com/wfcz10086/AI-automatically-generates-novels)
-- 问题反馈：[Issues](https://github.com/wfcz10086/AI-automatically-generates-novels/issues)
+- 项目主页：[GitHub](https://github.com/labubuu10086/ai)
+- 问题反馈：[Issues](https://github.com/labubuu10086/ai/issues)
