@@ -408,6 +408,19 @@ def should_retry(exc: Exception) -> bool:
     return any(marker in message for marker in retry_markers)
 
 
+def should_fallback_from_stream_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    fallback_markers = [
+        "prompt_tokens",
+        "cannot read properties of undefined",
+        "reading 'prompt_tokens'",
+        "reading “prompt_tokens”",
+        "usage",
+        "stream",
+    ]
+    return any(marker in message for marker in fallback_markers)
+
+
 def parse_sectioned_text(raw: str) -> dict[str, str]:
     pattern = re.compile(r"^###([A-Z_]+)\s*$", re.MULTILINE)
     matches = list(pattern.finditer(raw))
@@ -599,16 +612,30 @@ def make_stream_response(
         app.logger.error(str(exc))
         return error_response(str(exc))
     except RuntimeError as exc:
+        if should_fallback_from_stream_error(exc):
+            app.logger.warning("Streaming failed for %s, falling back to non-streaming: %s", prefix, exc)
+            return make_text_response(prefix, messages, temperature, data)
         app.logger.error(str(exc))
         return error_response(str(exc), status=502)
 
     def generate() -> Iterator[str]:
+        yielded_any = False
         try:
             for chunk in completion:
                 delta = chunk.choices[0].delta.content
                 if delta:
+                    yielded_any = True
                     yield delta
         except Exception as exc:
+            if not yielded_any and should_fallback_from_stream_error(exc):
+                app.logger.warning("Stream interrupted before output for %s, retrying non-streaming: %s", prefix, exc)
+                try:
+                    fallback_text = open_completion_text(prefix, messages, temperature, data)
+                    if fallback_text:
+                        yield fallback_text
+                        return
+                except Exception as fallback_exc:
+                    app.logger.error("Non-stream fallback failed for %s: %s", prefix, fallback_exc)
             message = f"Stream interrupted: {exc}"
             app.logger.error(message)
             yield message
