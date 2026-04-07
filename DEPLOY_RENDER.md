@@ -56,7 +56,7 @@ git push -u origin main
 Render 会使用：
 
 ```bash
-gunicorn app:app --bind 0.0.0.0:$PORT
+gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 180 --graceful-timeout 30
 ```
 
 本地开发仍然可以继续用：
@@ -113,3 +113,4 @@ https://你的服务名.onrender.com
 - 现在支持云端存档，手机和电脑可以通过同一个存档编号同步内容
 - 本地 API 配置仍然走浏览器本地存储，手机和电脑不会自动同步
 - 如果你把 API Key 配到 Render 环境变量里，手机端就不需要再单独填一遍
+- 如果日志里出现 `Worker was sent SIGKILL! Perhaps out of memory?`，通常就是免费实例内存吃紧；当前配置已经把 Gunicorn 压到 1 个 worker 来尽量减轻内存占用，但超长上下文或大批量生成时，免费实例仍可能不够。

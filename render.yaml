@@ -10,12 +10,16 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 180 --graceful-timeout 30
     autoDeploy: true
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: GEN1_BASE_URL
         value: https://api.openai.com/v1
       - key: GEN1_API_KEY
